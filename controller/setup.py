@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'controller_node = moteur.controllerNode:main',
+            'controller_node = controller.controllerNode:main',
         ],
     },
 )

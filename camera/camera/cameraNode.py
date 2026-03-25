@@ -5,7 +5,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Float32
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
-from ImageProcessing import ImageProcessing
+from .ImageProcessing import ImageProcessing
 
 
 KP           = 0.005
