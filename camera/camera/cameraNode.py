@@ -30,7 +30,7 @@ class CameraNode(Node):
 
         self.sub = self.create_subscription(
             Image, 
-            '/camera/image_raw', 
+            '/image_raw', 
             self.image_callback, 
             10
         )
@@ -42,6 +42,7 @@ class CameraNode(Node):
         self.get_logger().info('camera_node démarré')
 
     def image_callback(self, msg: Image):
+        self.get_logger().info(f"Image reçue: {msg.width}x{msg.height}", throttle_duration_sec=2.0)
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         res   = self.processor.process_frame(frame)
 
@@ -49,6 +50,7 @@ class CameraNode(Node):
 
         if res['error'] is not None:
             error_msg.data = res['error']
+            self.get_logger().info(f"Erreur ligne: {res['error']:.2f}", throttle_duration_sec=1.0)
         else:
             error_msg.data = 0.0
             self.get_logger().warn('Ligne non détectée',

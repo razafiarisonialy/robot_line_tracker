@@ -1,7 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from gopigo3 import GoPiGo3Driver
+
+# Importer ta classe personnalisée depuis le fichier local
+from .GoPiGo3Driver import GoPiGo3Driver
 
 
 GOPIGO_SPEED = 200
@@ -17,7 +22,7 @@ class MotorNode(Node):
         self.driver = GoPiGo3Driver(
             base_speed = GOPIGO_SPEED,
             max_speed  = GOPIGO_MAX,
-            steer_gain = STEER_GAIN,
+            steer_gain = STEER_GAIN
         )
 
         self.sub = self.create_subscription(
@@ -29,6 +34,7 @@ class MotorNode(Node):
 
         self._last_msg_time = self.get_clock().now()
         self._watchdog = self.create_timer(0.5, self._watchLog_callback)
+
         self.get_logger().info('motor_node démarré — en écoute sur /cmd_vel')
 
     def cmd_vel_callback(self, msg: Twist):
