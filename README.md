@@ -54,6 +54,9 @@ ros2_ws/
 ## Build
 
 ```bash
+cd ~/ros2_ws/src
+git clone https://github.com/razafiarisonialy/robot_line_tracker.git
+
 cd ~/ros2_ws
 colcon build --symlink-install
 ```
