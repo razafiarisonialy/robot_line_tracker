@@ -9,6 +9,17 @@
 
   <depend>rclpy</depend>
 
+  <!-- Dépendances sur les 4 packages à lancer -->
+  <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>camera</exec_depend>
+  <exec_depend>controller</exec_depend>
+  <exec_depend>moteur</exec_depend>
+
+  <!-- Infrastructure launch ROS2 -->
+  <exec_depend>ros2launch</exec_depend>
+ 
+  <buildtool_depend>ament_python</buildtool_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
