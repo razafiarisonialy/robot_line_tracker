@@ -99,7 +99,9 @@ git clone https://github.com/razafiarisonialy/robot_line_tracker.git
 
 cd ~/ros2_ws
 
-colcon build --packages-select line_tracker_interfaces && source install/setup.bash && colcon build --symlink-install
+colcon build --packages-select line_tracker_interfaces --symlink-install && \
+source install/setup.bash && \
+colcon build --symlink-install
 ```
 
 > **`--symlink-install`** permet d'éditer les fichiers Python sans rebuild.  

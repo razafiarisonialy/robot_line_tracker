@@ -16,18 +16,21 @@ class ControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("controller_node")
 
-        self.declare_parameter("kp",               0.003)
-        self.declare_parameter("base_speed",       0.15)
-        self.declare_parameter("max_angular",      0.8)
-        self.declare_parameter("speed_reduction",  0.6)
+        self.declare_parameter("kp",               0.008)
+        self.declare_parameter("base_speed",       0.08)
+        self.declare_parameter("max_angular",      1.0)
+        self.declare_parameter("speed_reduction",  0.5)
         self.declare_parameter("min_speed",        0.04)
         self.declare_parameter("watchdog_period",  0.5)
         self.declare_parameter("watchdog_timeout", 1.0)
-        self.declare_parameter("search_angular",   0.4)
+        self.declare_parameter("search_angular",   0.5)
 
         self.declare_parameter("dead_band",        5.0)
-        self.declare_parameter("curve_threshold",  0.5)
-        self.declare_parameter("curve_boost",      1.3)
+        self.declare_parameter("curve_threshold",  0.4)
+        self.declare_parameter("curve_boost",      1.6)
+
+
+        self.declare_parameter("search_ramp_time", 1.0)
 
         self._kp               = self.get_parameter("kp").value
         self._base_speed       = self.get_parameter("base_speed").value
@@ -39,9 +42,11 @@ class ControllerNode(Node):
         self._dead_band        = self.get_parameter("dead_band").value
         self._curve_threshold  = self.get_parameter("curve_threshold").value
         self._curve_boost      = self.get_parameter("curve_boost").value
+        self._search_ramp_time = self.get_parameter("search_ramp_time").value
         watchdog_period        = self.get_parameter("watchdog_period").value
 
         self._last_direction: float = 0.0
+        self._search_start_time: float | None = None
 
         self._sub = self.create_subscription(
             LineDetection, "/line/detection", self._detection_callback, 10
@@ -65,10 +70,12 @@ class ControllerNode(Node):
         self._last_direction = msg.last_direction
 
         if msg.state == _STATE_FOLLOWING and msg.line_detected:
+            self._search_start_time = None
             self._handle_following(msg.error)
         elif msg.state == _STATE_SEARCHING:
             self._handle_searching(msg.last_direction)
         else:
+            self._search_start_time = None
             self._handle_stop()
 
 
@@ -107,12 +114,24 @@ class ControllerNode(Node):
         )
 
     def _handle_searching(self, last_direction: float) -> None:
+        now = self.get_clock().now().nanoseconds / 1e9
+
+        if self._search_start_time is None:
+            self._search_start_time = now
+
+        elapsed   = now - self._search_start_time
+        ramp      = min(1.0, elapsed / max(self._search_ramp_time, 0.1))
+        omega_mag = self._search_angular * (0.4 + 0.6 * ramp)
+
         sign      = math.copysign(1.0, last_direction) if last_direction != 0.0 else 1.0
-        angular_z = float(sign * self._search_angular)
-        self._publish_cmd_vel(0.0, angular_z)
+        angular_z = float(sign * omega_mag)
+
+        linear_x  = self._min_speed * 0.5 * (1.0 - ramp)
+
+        self._publish_cmd_vel(linear_x, angular_z)
         self.get_logger().warn(
             f"[SEARCHING]  rotation={'gauche' if sign > 0 else 'droite'}  "
-            f"ω={angular_z:+.3f} rad/s",
+            f"ω={angular_z:+.3f} rad/s  ramp={ramp:.2f}",
             throttle_duration_sec=0.5,
         )
 

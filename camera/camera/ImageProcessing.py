@@ -24,7 +24,7 @@ class ImageProcessing:
     def __init__(
         self,
         threshold:       int   = 80,
-        roi_ratio:       float = 0.5,
+        roi_ratio:       float = 0.30,
         use_otsu:        bool  = True,
         min_area:        int   = 300,
         blur_size:       int   = 7,
@@ -33,6 +33,8 @@ class ImageProcessing:
         max_white_ratio: float = 0.80,
         use_contour:     bool  = True,
         center_band:     float = 0.7,
+        use_multi_roi:   bool  = True,
+        roi_levels:      int   = 3,
     ) -> None:
         if blur_size % 2 == 0:
             raise ValueError(f"blur_size doit être impair, reçu {blur_size}")
@@ -51,6 +53,11 @@ class ImageProcessing:
         self.max_white_ratio = max_white_ratio
         self.use_contour     = use_contour
         self.center_band     = center_band
+        self.use_multi_roi   = use_multi_roi
+        self.roi_levels      = roi_levels
+
+        self._last_cx_line:   int | None = None
+        self._last_cy_line:   int | None = None
 
 
     def process_frame(self, frame: np.ndarray, state: int = STATE_FOLLOWING) -> dict:
@@ -71,14 +78,14 @@ class ImageProcessing:
             roi_y         = roi_y,
         )
 
-        if self.use_contour:
-            cx_line_roi, cy_line_roi = self._centroid_from_contour(binary)
-        else:
-            cx_line_roi, cy_line_roi = self._centroid_from_moments(binary)
+        cx_line_roi, cy_line_roi = self._detect_with_fallback(frame, h, w, roi_y, binary)
 
         if cx_line_roi is not None:
             cx_line = cx_line_roi
             cy_line = roi_y + cy_line_roi
+
+            self._last_cx_line = cx_line
+            self._last_cy_line = cy_line
 
             result["line_detected"] = True
             result["cx_line"]       = cx_line
@@ -88,9 +95,46 @@ class ImageProcessing:
                 cx_image, roi_y, result["error"], h, w, state,
             )
         else:
-            result["debug"] = self._draw_lost(frame, w, h, state)
+            result["debug"] = self._draw_lost(frame, w, h, state, self._last_cx_line, cx_image)
 
         return result
+
+
+    def _detect_with_fallback(
+        self, frame: np.ndarray, h: int, w: int, roi_y_base: int, binary_base: np.ndarray
+    ) -> tuple[int | None, int | None]:
+        if self.use_contour:
+            cx, cy = self._centroid_from_contour(binary_base)
+        else:
+            cx, cy = self._centroid_from_moments(binary_base)
+
+        if cx is not None:
+            return cx, cy
+
+        if not self.use_multi_roi:
+            return None, None
+
+        roi_height = h - roi_y_base
+        for level in range(1, self.roi_levels):
+            shift      = int(roi_height * 0.5 * level)
+            roi_y_up   = max(0, roi_y_base - shift)
+            roi_up     = frame[roi_y_up : roi_y_base + roi_height // 2, :]
+
+            if roi_up.shape[0] < 20:
+                break
+
+            binary_up  = self._binarize(roi_up)
+
+            if self.use_contour:
+                cx_up, cy_up = self._centroid_from_contour(binary_up)
+            else:
+                cx_up, cy_up = self._centroid_from_moments(binary_up)
+
+            if cx_up is not None:
+                cy_adjusted = cy_up + (roi_y_up - roi_y_base)
+                return cx_up, max(0, cy_adjusted)
+
+        return None, None
 
 
     def _binarize(self, roi: np.ndarray) -> np.ndarray:
@@ -121,7 +165,10 @@ class ImageProcessing:
         if not contours:
             return None, None
 
-        largest = max(contours, key=cv2.contourArea)
+        largest = self._select_best_contour(contours, binary.shape)
+        if largest is None:
+            return None, None
+
         if cv2.contourArea(largest) < self.min_area:
             return None, None
 
@@ -144,6 +191,35 @@ class ImageProcessing:
             cy = int(M_band["m01"] / M_band["m00"])
 
         return cx, cy
+
+    def _select_best_contour(
+        self, contours: list, shape: tuple
+    ):
+        h, w = shape
+        valid = [c for c in contours if cv2.contourArea(c) >= self.min_area]
+        if not valid:
+            return None
+
+        if self._last_cx_line is not None:
+            def proximity_score(c):
+                M = cv2.moments(c)
+                if M["m00"] == 0:
+                    return float('inf')
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                dist_x = abs(cx - self._last_cx_line)
+                bonus_bottom = (h - cy) * 0.3
+                return dist_x - bonus_bottom
+
+            return min(valid, key=proximity_score)
+        else:
+            def bottom_score(c):
+                M = cv2.moments(c)
+                if M["m00"] == 0:
+                    return 0
+                return int(M["m01"] / M["m00"])
+
+            return max(valid, key=bottom_score)
 
     def _centroid_from_moments(
         self, binary: np.ndarray
@@ -183,6 +259,9 @@ class ImageProcessing:
             (255, 0, 255), 3, tipLength=0.3,
         )
 
+        if self._last_cx_line is not None and not (cx_line == self._last_cx_line):
+            cv2.circle(debug, (self._last_cx_line, cy_line), 6, (100, 200, 255), 2)
+
         direction = "← GAUCHE" if error > 0 else "→ DROITE" if error < 0 else "■ CENTRE"
         y_text    = max(roi_y - 15, 40)
         cv2.rectangle(debug, (0, 0), (w, 32), (30, 30, 30), -1)
@@ -196,7 +275,10 @@ class ImageProcessing:
         )
         return debug
 
-    def _draw_lost(self, frame: np.ndarray, w: int, h: int, state: int) -> np.ndarray:
+    def _draw_lost(
+        self, frame: np.ndarray, w: int, h: int, state: int,
+        last_cx: int | None = None, cx_image: int = 0,
+    ) -> np.ndarray:
         debug     = frame.copy()
         color     = _STATE_COLORS.get(state, (60, 60, 226))
         label_str = _STATE_LABELS.get(state, "LOST")
@@ -210,6 +292,13 @@ class ImageProcessing:
             (w // 2 - 180, h // 2),
             cv2.FONT_HERSHEY_SIMPLEX, 1.1, color, 3, cv2.LINE_AA,
         )
+        if last_cx is not None:
+            side = "← cherche GAUCHE" if last_cx < cx_image else "→ cherche DROITE"
+            cv2.putText(
+                debug, side,
+                (w // 2 - 120, h // 2 + 50),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA,
+            )
         return debug
 
     def __repr__(self) -> str:
@@ -219,5 +308,6 @@ class ImageProcessing:
             f"min_contrast={self.min_contrast}, "
             f"max_white_ratio={self.max_white_ratio}, "
             f"use_contour={self.use_contour}, "
-            f"center_band={self.center_band})"
+            f"center_band={self.center_band}, "
+            f"use_multi_roi={self.use_multi_roi})"
         )
