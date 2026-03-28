@@ -26,6 +26,8 @@ class CameraNode(Node):
         self.declare_parameter("debug",                True)
         self.declare_parameter("search_timeout",       3.0)
         self.declare_parameter("stop_timeout",         6.0)
+        self.declare_parameter('min_contrast',    15.0)
+        self.declare_parameter('max_white_ratio', 0.80)
 
         roi_ratio        = self.get_parameter("roi_ratio").value
         use_otsu         = self.get_parameter("use_otsu").value
@@ -36,15 +38,19 @@ class CameraNode(Node):
         self._debug      = self.get_parameter("debug").value
         self._search_timeout = self.get_parameter("search_timeout").value
         self._stop_timeout   = self.get_parameter("stop_timeout").value
+        min_contrast    = self.get_parameter('min_contrast').value
+        max_white_ratio = self.get_parameter('max_white_ratio').value
 
         self._bridge    = CvBridge()
         self._processor = ImageProcessing(
-            threshold  = threshold,
-            roi_ratio  = roi_ratio,
-            use_otsu   = use_otsu,
-            min_area   = min_area,
-            blur_size  = blur_size,
-            morph_size = morph_size,
+            threshold       = threshold,
+            roi_ratio       = roi_ratio,
+            use_otsu        = use_otsu,
+            min_area        = min_area,
+            blur_size       = blur_size,
+            morph_size      = morph_size,
+            min_contrast    = min_contrast,
+            max_white_ratio = max_white_ratio,
         )
 
         self._state:          int   = STATE_FOLLOWING
