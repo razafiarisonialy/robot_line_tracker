@@ -95,6 +95,7 @@ Avec paramètres personnalisés (exemple) :
 ros2 launch line_tracker line_tracker.launch.py \
   kp:=0.006 \
   base_speed:=0.12 \
+  motor_base_speed:=200 \
   camera_device:=/dev/video0 \
   debug:=True
 ```
@@ -214,7 +215,15 @@ ros2 run controller controller_node --ros-args \
 
 > **Note `steer_gain`** : si `steer_gain = 0.0`, le driver calcule le différentiel de vitesse à partir de la géométrie réelle du robot (empattement = 117 mm, diamètre roue = 66.5 mm).
 
-Exemple :
+Exemple via launch file :
+```bash
+ros2 launch line_tracker line_tracker.launch.py \
+  motor_base_speed:=200 \
+  motor_max_speed:=350 \
+  steer_gain:=50.0
+```
+
+Exemple nœud direct :
 ```bash
 ros2 run moteur motor_node --ros-args \
   -p base_speed:=200 \

@@ -70,8 +70,8 @@ class GoPiGo3Driver:
         left_dps  = max(-self.max_speed, min(self.max_speed,  left_dps))
         right_dps = max(-self.max_speed, min(self.max_speed, right_dps))
 
-        self._gpg.set_motor_dps(self._gpg.MOTOR_LEFT,  int(left_dps))
-        self._gpg.set_motor_dps(self._gpg.MOTOR_RIGHT, int(right_dps))
+        self._gpg.set_motor_dps(self._gpg.MOTOR_LEFT,  -int(left_dps))
+        self._gpg.set_motor_dps(self._gpg.MOTOR_RIGHT, -int(right_dps))
 
         self._log.debug(
             "apply_twist  v=%.3f m/s  ω=%+.3f rad/s  → L=%+.0f DPS  R=%+.0f DPS",
