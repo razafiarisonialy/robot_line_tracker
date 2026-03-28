@@ -21,10 +21,10 @@ def generate_launch_description():
     arg_debug       = DeclareLaunchArgument('debug',       default_value='True', description='Publier images de debug')
 
     #controller_node
-    arg_kp              = DeclareLaunchArgument('kp',              default_value='0.005', description='Gain proportionnel Kp')
+    arg_kp              = DeclareLaunchArgument('kp',              default_value='0.003', description='Gain proportionnel Kp')
     arg_base_speed      = DeclareLaunchArgument('base_speed',      default_value='0.15',  description='Vitesse linéaire de croisière du controller (m/s)')
     arg_max_angular     = DeclareLaunchArgument('max_angular',     default_value='0.8',   description='Saturation angulaire (rad/s)')
-    arg_speed_reduction = DeclareLaunchArgument('speed_reduction', default_value='0.5',   description='Coefficient réduction vitesse en virage')
+    arg_speed_reduction = DeclareLaunchArgument('speed_reduction', default_value='0.3',   description='Coefficient réduction vitesse en virage')
     arg_min_speed       = DeclareLaunchArgument('min_speed',       default_value='0.05',  description='Vitesse linéaire minimale (m/s)')
 
     # motor_node
@@ -71,7 +71,7 @@ def generate_launch_description():
         output     = 'screen',
         parameters = [{
             'kp':              LaunchConfiguration('kp'),
-            'base_speed':      LaunchConfiguration('base_speed'),       # m/s
+            'base_speed':      LaunchConfiguration('base_speed'),
             'max_angular':     LaunchConfiguration('max_angular'),
             'speed_reduction': LaunchConfiguration('speed_reduction'),
             'min_speed':       LaunchConfiguration('min_speed'),

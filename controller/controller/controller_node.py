@@ -9,10 +9,10 @@ class ControllerNode(Node):
     def __init__(self):
         super().__init__('controller_node')
 
-        self.declare_parameter('kp',               0.005)
+        self.declare_parameter('kp',               0.003)
         self.declare_parameter('base_speed',       0.15)
         self.declare_parameter('max_angular',      0.8)
-        self.declare_parameter('speed_reduction',  0.5)
+        self.declare_parameter('speed_reduction',  0.3)
         self.declare_parameter('min_speed',        0.05)
         self.declare_parameter('watchdog_period',  0.5)
         self.declare_parameter('watchdog_timeout', 1.0)

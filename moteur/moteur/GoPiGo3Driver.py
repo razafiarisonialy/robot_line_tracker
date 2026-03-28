@@ -64,8 +64,8 @@ class GoPiGo3Driver:
         else:
             diff_dps = _radps_to_dps(angular_z)
 
-        left_dps  = base_dps - diff_dps
-        right_dps = base_dps + diff_dps
+        left_dps  = base_dps + diff_dps
+        right_dps = base_dps - diff_dps
 
         left_dps  = max(-self.max_speed, min(self.max_speed,  left_dps))
         right_dps = max(-self.max_speed, min(self.max_speed, right_dps))
