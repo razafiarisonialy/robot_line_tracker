@@ -19,18 +19,15 @@ class ControllerNode(Node):
         self.declare_parameter("kp",               0.008)
         self.declare_parameter("base_speed",       0.08)
         self.declare_parameter("max_angular",      1.0)
-        self.declare_parameter("speed_reduction",  0.5)
-        self.declare_parameter("min_speed",        0.04)
+        self.declare_parameter("speed_reduction",  0.6)
+        self.declare_parameter("min_speed",        0.03) 
         self.declare_parameter("watchdog_period",  0.5)
         self.declare_parameter("watchdog_timeout", 1.0)
-        self.declare_parameter("search_angular",   0.5)
-
-        self.declare_parameter("dead_band",        5.0)
-        self.declare_parameter("curve_threshold",  0.4)
-        self.declare_parameter("curve_boost",      1.6)
-
-
-        self.declare_parameter("search_ramp_time", 1.0)
+        self.declare_parameter("search_angular",   0.55)
+        self.declare_parameter("dead_band",        6.0)
+        self.declare_parameter("curve_threshold",  0.35)
+        self.declare_parameter("curve_boost",      1.7)
+        self.declare_parameter("search_ramp_time", 0.8)
 
         self._kp               = self.get_parameter("kp").value
         self._base_speed       = self.get_parameter("base_speed").value
@@ -64,7 +61,7 @@ class ControllerNode(Node):
             f"curve_boost={self._curve_boost}]"
         )
 
-
+    # ──────────────────────────────────────────────────────────────
     def _detection_callback(self, msg: LineDetection) -> None:
         self._last_msg_time  = self.get_clock().now()
         self._last_direction = msg.last_direction
@@ -78,7 +75,7 @@ class ControllerNode(Node):
             self._search_start_time = None
             self._handle_stop()
 
-
+    # ──────────────────────────────────────────────────────────────
     def _handle_following(self, error: float) -> None:
         if abs(error) < self._dead_band:
             error = 0.0
@@ -87,18 +84,21 @@ class ControllerNode(Node):
             np.clip(self._kp * error, -self._max_angular, self._max_angular)
         )
 
-        error_norm = abs(angular_z) / self._max_angular
-        if error_norm > self._curve_threshold:
+        # ── 3. Boost non-linéaire en virage ───────────────────────
+        error_norm_pre = abs(angular_z) / self._max_angular
+        if error_norm_pre > self._curve_threshold:
             angular_z = float(
                 np.clip(
                     angular_z * self._curve_boost,
-                    -self._max_angular, self._max_angular
+                    -self._max_angular,
+                    self._max_angular,
                 )
             )
 
+        error_norm_post = abs(angular_z) / self._max_angular
         linear_x = float(
             np.clip(
-                self._base_speed * (1.0 - self._speed_reduction * error_norm ** 2),
+                self._base_speed * (1.0 - self._speed_reduction * error_norm_post ** 2),
                 self._min_speed,
                 self._base_speed,
             )
@@ -109,10 +109,12 @@ class ControllerNode(Node):
         direction = "← Gauche" if error > 0 else "→ Droite" if error < 0 else "■ Centre"
         self.get_logger().info(
             f"[FOLLOWING]  e={error:+.1f}px {direction}  "
-            f"ω={angular_z:+.3f} rad/s  v={linear_x:.3f} m/s",
+            f"ω={angular_z:+.3f} rad/s  v={linear_x:.3f} m/s  "
+            f"norm={error_norm_post:.2f}",
             throttle_duration_sec=0.1,
         )
 
+    # ──────────────────────────────────────────────────────────────
     def _handle_searching(self, last_direction: float) -> None:
         now = self.get_clock().now().nanoseconds / 1e9
 
@@ -135,6 +137,7 @@ class ControllerNode(Node):
             throttle_duration_sec=0.5,
         )
 
+    # ──────────────────────────────────────────────────────────────
     def _handle_stop(self) -> None:
         self._publish_cmd_vel(0.0, 0.0)
         self.get_logger().error(
