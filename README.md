@@ -9,10 +9,13 @@ Architecture modulaire en 4 nœuds communicants via topics.
 ros2_ws/
 └── src/
     └── robot_line_tracker/
-        ├── camera/          # Acquisition & traitement image
-        ├── controller/      # controlleur
-        ├── moteur/          # Pilotage des moteurs GoPiGo3
-        └── line_tracker/    # Package de lancement
+        ├── line_tracker_interfaces/   # Messages custom (CMake)
+        │   └── msg/
+        │       └── LineDetection.msg
+        ├── camera/                    # Acquisition & traitement image + FSM
+        ├── controller/                # Contrôleur P + logique de récupération
+        ├── moteur/                    # Pilotage des moteurs GoPiGo3
+        └── line_tracker/              # Package de lancement
 ```
 
 ---
@@ -23,8 +26,10 @@ ros2_ws/
 [v4l2_camera_node]
         │ /image_raw (sensor_msgs/Image)
         ▼
-[camera_node]
-        │ /line/error (std_msgs/Float32)
+[camera_node]  ←── FSM : FOLLOWING / SEARCHING / STOP_LOST
+        │ /line/detection (line_tracker_interfaces/LineDetection)
+        │ /line/debug     (sensor_msgs/Image)   si debug=True
+        │ /line/binary    (sensor_msgs/Image)   si debug=True
         ▼
 [controller_node]
         │ /cmd_vel (geometry_msgs/Twist)
@@ -35,40 +40,78 @@ ros2_ws/
 
 ---
 
+## Message personnalisé : LineDetection
+
+Le topic `/line/detection` remplace l'ancien `/line/error` (Float32).  
+Il transporte un contexte complet pour permettre la logique de récupération :
+
+```
+bool    line_detected     # True uniquement si une ligne valide est détectée
+float32 error             # Erreur pixel — valide SEULEMENT si line_detected == True
+uint8   state             # État FSM : 0=FOLLOWING  1=SEARCHING  2=STOP_LOST
+float32 last_direction    # Signe de la dernière erreur connue (direction de récupération)
+float32 cx_line           # Centroïde X détecté (debug)
+float32 cx_image          # Centre image X (debug)
+```
+
+> **Important** : quand `line_detected == False`, `error` vaut `NaN` et non `0.0`.  
+> Un `0.0` signifie toujours "ligne parfaitement centrée", jamais "ligne absente".
+
+---
+
+## Machine d'états (FSM)
+
+| État | Condition | Comportement robot |
+|------|-----------|--------------------|
+| `FOLLOWING` (0) | Ligne détectée | Correcteur P normal — vitesse + cap |
+| `SEARCHING` (1) | Ligne absente < `stop_timeout` | Rotation sur place vers la dernière direction connue |
+| `STOP_LOST` (2) | Ligne absente > `stop_timeout` | Arrêt complet |
+
+Transitions :
+- Ligne retrouvée → retour immédiat à `FOLLOWING`
+- Ligne perdue → `SEARCHING` après `search_timeout` secondes
+- Toujours perdue → `STOP_LOST` après `stop_timeout` secondes
+
+---
+
 ## Dépendances
 
 ### Installation
 
-- ROS2 Jazzy installé sur le Raspberry Pi: https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html
-- raspberry pi camera: https://www.youtube.com/watch?v=va7o7wzhEE4
-- install cv_bridge: https://index.ros.org/p/cv_bridge/#jazzy
-- opencv: https://docs.opencv.org/4.x/d2/de6/tutorial_py_setup_in_ubuntu.html
+- ROS2 Jazzy : https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html
+- Raspberry Pi camera : https://www.youtube.com/watch?v=va7o7wzhEE4
+- cv_bridge : https://index.ros.org/p/cv_bridge/#jazzy
+- OpenCV : https://docs.opencv.org/4.x/d2/de6/tutorial_py_setup_in_ubuntu.html
 
 ### Documentation
 
-- Documentation package v4l2_camera sur ros2 jazzy: https://docs.ros.org/en/jazzy/p/v4l2_camera/
-- Documentation gopigo3: https://gopigo3.readthedocs.io/en/master/api-basic/easygopigo3.html
+- v4l2_camera (ROS2 Jazzy) : https://docs.ros.org/en/jazzy/p/v4l2_camera/
+- GoPiGo3 : https://gopigo3.readthedocs.io/en/master/api-basic/easygopigo3.html
 
 ---
 
 ## Build
 
 ```bash
+mkdir -p ros2_ws/src
 cd ~/ros2_ws/src
 git clone https://github.com/razafiarisonialy/robot_line_tracker.git
 
 cd ~/ros2_ws
+
+colcon build --packages-select line_tracker_interfaces --symlink-install && \
+source install/setup.bash && \
 colcon build --symlink-install
 ```
 
-> **Remarque** : `--symlink-install` permet d'éditer les fichiers Python sans rebuild.
+> **`--symlink-install`** permet d'éditer les fichiers Python sans rebuild.  
+> **L'ordre de build est strict** : `line_tracker_interfaces` doit être compilé avant les packages Python qui en dépendent.
 
 ---
 
 ## Sourcer l'environnement
 
 ```bash
-# À exécuter dans chaque nouveau terminal
 source /opt/ros/jazzy/setup.bash
 source ~/ros2_ws/install/setup.bash
 ```
@@ -78,6 +121,24 @@ Pour automatiser, ajouter à `~/.bashrc` :
 echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 echo "source ~/ros2_ws/install/setup.bash" >> ~/.bashrc
 source ~/.bashrc
+```
+
+---
+
+## Vérifier le message custom
+
+```bash
+ros2 interface show line_tracker_interfaces/msg/LineDetection
+```
+
+Résultat attendu :
+```
+bool line_detected
+float32 error
+uint8 state
+float32 last_direction
+float32 cx_line
+float32 cx_image
 ```
 
 ---
@@ -146,23 +207,25 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args \
 
 ---
 
-### `camera_node` — Traitement image (`package: camera`)
+### `camera_node` — Traitement image + FSM (`package: camera`)
 
 | Paramètre | Type | Défaut | Description |
 |-----------|------|--------|-------------|
 | `roi_ratio` | float | `0.5` | Fraction de l'image analysée depuis le bas (0.0–1.0) |
-| `use_otsu` | bool | `True` | Seuillage adaptatif Otsu — recommandé pour éclairage variable |
-| `threshold` | int | `80` | Seuil fixe, utilisé uniquement si `use_otsu=False` |
-| `min_area` | int | `300` | Surface minimale du contour en px² — filtre les petits artefacts |
-| `blur_size` | int | `7` | Taille du filtre gaussien (doit être **impair**) |
-| `morph_size` | int | `5` | Taille du noyau morphologique (close + open) |
-| `debug` | bool | `True` | Publier les images annotées sur `/line/debug` et `/line/binary` |
+| `use_otsu` | bool | `True` | Seuillage adaptatif Otsu |
+| `threshold` | int | `80` | Seuil fixe si `use_otsu=False` |
+| `min_area` | int | `300` | Surface minimale du contour (px²) |
+| `blur_size` | int | `7` | Taille du filtre gaussien (doit être impair) |
+| `morph_size` | int | `5` | Taille du noyau morphologique |
+| `debug` | bool | `True` | Publier `/line/debug` et `/line/binary` |
+| `search_timeout` | float | `3.0` | Délai (s) avant passage à l'état SEARCHING |
+| `stop_timeout` | float | `6.0` | Délai (s) avant passage à l'état STOP_LOST |
 
 Topics publiés :
 
 | Topic | Type | Condition |
 |-------|------|-----------|
-| `/line/error` | `std_msgs/Float32` | Toujours |
+| `/line/detection` | `line_tracker_interfaces/LineDetection` | Toujours |
 | `/line/debug` | `sensor_msgs/Image` | Si `debug=True` |
 | `/line/binary` | `sensor_msgs/Image` | Si `debug=True` |
 
@@ -179,17 +242,27 @@ ros2 run camera camera_node --ros-args \
 
 ---
 
-### `controller_node` — controlleur (`package: controller`)
+### `controller_node` — Contrôleur P + FSM (`package: controller`)
 
 | Paramètre | Type | Défaut | Description |
 |-----------|------|--------|-------------|
-| `kp` | float | `0.005` | Gain proportionnel — augmenter si réponse lente, réduire si oscillations |
-| `base_speed` | float | `0.15` | Vitesse linéaire de croisière en m/s |
-| `max_angular` | float | `0.8` | Saturation de la vitesse angulaire en rad/s |
-| `speed_reduction` | float | `0.5` | Réduction de vitesse en virage (`0.0` = aucune, `1.0` = arrêt complet) |
-| `min_speed` | float | `0.05` | Vitesse linéaire minimale en m/s — évite l'arrêt complet |
-| `watchdog_period` | float | `0.5` | Période du timer watchdog en secondes |
-| `watchdog_timeout` | float | `1.0` | Délai sans message `/line/error` avant alerte watchdog |
+| `kp` | float | `0.003` | Gain proportionnel |
+| `base_speed` | float | `0.15` | Vitesse linéaire de croisière (m/s) |
+| `max_angular` | float | `0.8` | Saturation angulaire (rad/s) |
+| `speed_reduction` | float | `0.3` | Réduction de vitesse en virage |
+| `min_speed` | float | `0.05` | Vitesse linéaire minimale (m/s) |
+| `search_angular` | float | `0.4` | Vitesse de rotation en état SEARCHING (rad/s) |
+| `watchdog_period` | float | `0.5` | Période du timer watchdog (s) |
+| `watchdog_timeout` | float | `1.0` | Délai sans `/line/detection` avant arrêt watchdog |
+
+
+Comportement par état :
+
+| État reçu | `linear_x` | `angular_z` |
+|-----------|-----------|------------|
+| `FOLLOWING` | Correcteur P réduit en virage | `Kp × error` |
+| `SEARCHING` | `0.0` (arrêt en translation) | `±search_angular` |
+| `STOP_LOST` | `0.0` | `0.0` |
 
 Exemple :
 ```bash
@@ -213,7 +286,9 @@ ros2 run controller controller_node --ros-args \
 | `watchdog_period` | float | `0.5` | Période du timer watchdog en secondes |
 | `watchdog_timeout` | float | `1.0` | Délai sans `/cmd_vel` avant arrêt d'urgence des moteurs |
 
-> **Note `steer_gain`** : si `steer_gain = 0.0`, le driver calcule le différentiel de vitesse à partir de la géométrie réelle du robot (empattement = 117 mm, diamètre roue = 66.5 mm).
+> **Note `steer_gain`** : si `steer_gain = 0.0`, le driver calcule le différentiel à partir de la géométrie réelle (empattement = 117 mm, diamètre roue = 66.5 mm).
+
+> **Protection NaN** : si `linear_x` ou `angular_z` est `NaN`, le nœud arrête les moteurs immédiatement.
 
 Exemple via launch file :
 ```bash
@@ -241,3 +316,6 @@ ros2 run moteur motor_node --ros-args \
 4. **Perd la ligne dans les virages** → Réduire `base_speed`, augmenter `roi_ratio`
 5. **Binarisation bruitée** → Augmenter `blur_size` (valeur impaire) ou `morph_size`
 6. **Robot trop lent en ligne droite** → Augmenter `base_speed` ou réduire `speed_reduction`
+7. **Récupération trop lente** → Réduire `search_timeout` ou augmenter `search_angular`
+8. **Robot ne s'arrête jamais** → Réduire `stop_timeout`
+9. **Robot tourne du mauvais côté en SEARCHING** → Vérifier le signe de `last_direction` dans les logs

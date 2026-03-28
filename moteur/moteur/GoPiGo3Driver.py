@@ -9,6 +9,7 @@ WHEEL_BASE_WIDTH_MM:    float = 117.0
 WHEEL_CIRCUMFERENCE_MM: float = math.pi * WHEEL_DIAMETER_MM
 
 
+
 def _ms_to_dps(v_ms: float) -> float:
     v_mm_s = v_ms * 1_000.0
     return (v_mm_s / WHEEL_CIRCUMFERENCE_MM) * 360.0
@@ -38,15 +39,7 @@ class GoPiGo3Driver:
             self._gpg.MOTOR_LEFT + self._gpg.MOTOR_RIGHT,
             dps=self.max_speed,
         )
-
-        self._gpg.offset_motor_encoder(
-            self._gpg.MOTOR_LEFT,
-            self._gpg.get_motor_encoder(self._gpg.MOTOR_LEFT),
-        )
-        self._gpg.offset_motor_encoder(
-            self._gpg.MOTOR_RIGHT,
-            self._gpg.get_motor_encoder(self._gpg.MOTOR_RIGHT),
-        )
+        self._reset_encoders()
 
         self._log.info(
             "GoPiGo3Driver initialisé — base=%d DPS  max=%d DPS  steer_gain=%s",
@@ -55,6 +48,7 @@ class GoPiGo3Driver:
             f"{steer_gain:.1f}" if steer_gain is not None else "cinématique",
         )
 
+    # ── API publique ──────────────────────────────────────────────────────────
 
     def apply_twist(self, linear_x: float, angular_z: float) -> None:
         base_dps = _ms_to_dps(linear_x)
@@ -64,11 +58,8 @@ class GoPiGo3Driver:
         else:
             diff_dps = _radps_to_dps(angular_z)
 
-        left_dps  = base_dps + diff_dps
-        right_dps = base_dps - diff_dps
-
-        left_dps  = max(-self.max_speed, min(self.max_speed,  left_dps))
-        right_dps = max(-self.max_speed, min(self.max_speed, right_dps))
+        left_dps  = max(-self.max_speed, min(self.max_speed, base_dps + diff_dps))
+        right_dps = max(-self.max_speed, min(self.max_speed, base_dps - diff_dps))
 
         self._gpg.set_motor_dps(self._gpg.MOTOR_LEFT,  -int(left_dps))
         self._gpg.set_motor_dps(self._gpg.MOTOR_RIGHT, -int(right_dps))
@@ -83,7 +74,6 @@ class GoPiGo3Driver:
             self._gpg.MOTOR_LEFT + self._gpg.MOTOR_RIGHT, 0
         )
         self._log.info("GoPiGo3Driver — STOP")
-
 
     def get_encoders(self) -> tuple[int, int]:
         return (
@@ -100,6 +90,16 @@ class GoPiGo3Driver:
     def reset(self) -> None:
         self._gpg.reset_all()
         self._log.info("GoPiGo3Driver — reset_all()")
+
+    def _reset_encoders(self) -> None:
+        self._gpg.offset_motor_encoder(
+            self._gpg.MOTOR_LEFT,
+            self._gpg.get_motor_encoder(self._gpg.MOTOR_LEFT),
+        )
+        self._gpg.offset_motor_encoder(
+            self._gpg.MOTOR_RIGHT,
+            self._gpg.get_motor_encoder(self._gpg.MOTOR_RIGHT),
+        )
 
     def __del__(self) -> None:
         try:
