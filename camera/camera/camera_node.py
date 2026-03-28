@@ -1,31 +1,41 @@
+from __future__ import annotations
 import rclpy
 from rclpy.node import Node
-from rclpy.parameter import Parameter
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32
 from cv_bridge import CvBridge
-from .ImageProcessing import ImageProcessing
+
+from .ImageProcessing import (
+    ImageProcessing,
+    STATE_FOLLOWING,
+    STATE_SEARCHING,
+    STATE_STOP_LOST,
+)
+from line_tracker_interfaces.msg import LineDetection
 
 class CameraNode(Node):
 
-    def __init__(self):
-        super().__init__('camera_node')
+    def __init__(self) -> None:
+        super().__init__("camera_node")
 
-        self.declare_parameter('roi_ratio',   0.5)
-        self.declare_parameter('use_otsu',    True)
-        self.declare_parameter('threshold',   80)
-        self.declare_parameter('min_area',    300)
-        self.declare_parameter('blur_size',   7)
-        self.declare_parameter('morph_size',  5)
-        self.declare_parameter('debug',       True)
+        self.declare_parameter("roi_ratio",            0.5)
+        self.declare_parameter("use_otsu",             True)
+        self.declare_parameter("threshold",            80)
+        self.declare_parameter("min_area",             300)
+        self.declare_parameter("blur_size",            7)
+        self.declare_parameter("morph_size",           5)
+        self.declare_parameter("debug",                True)
+        self.declare_parameter("search_timeout",       3.0)
+        self.declare_parameter("stop_timeout",         6.0)
 
-        roi_ratio  = self.get_parameter('roi_ratio').value
-        use_otsu   = self.get_parameter('use_otsu').value
-        threshold  = self.get_parameter('threshold').value
-        min_area   = self.get_parameter('min_area').value
-        blur_size  = self.get_parameter('blur_size').value
-        morph_size = self.get_parameter('morph_size').value
-        self._debug = self.get_parameter('debug').value
+        roi_ratio        = self.get_parameter("roi_ratio").value
+        use_otsu         = self.get_parameter("use_otsu").value
+        threshold        = self.get_parameter("threshold").value
+        min_area         = self.get_parameter("min_area").value
+        blur_size        = self.get_parameter("blur_size").value
+        morph_size       = self.get_parameter("morph_size").value
+        self._debug      = self.get_parameter("debug").value
+        self._search_timeout = self.get_parameter("search_timeout").value
+        self._stop_timeout   = self.get_parameter("stop_timeout").value
 
         self._bridge    = CvBridge()
         self._processor = ImageProcessing(
@@ -37,17 +47,25 @@ class CameraNode(Node):
             morph_size = morph_size,
         )
 
+        self._state:          int   = STATE_FOLLOWING
+        self._last_seen_time: float = self.get_clock().now().nanoseconds / 1e9
+        self._last_direction: float = 0.0   # signe de la dernière erreur connue
+
         self._sub = self.create_subscription(
-            Image, '/image_raw', self._image_callback, 10
+            Image, "/image_raw", self._image_callback, 10
         )
-        self._pub_error  = self.create_publisher(Float32, '/line/error',  10)
-        self._pub_debug  = self.create_publisher(Image,   '/line/debug',  10)
-        self._pub_binary = self.create_publisher(Image,   '/line/binary', 10)
+        self._pub_detection = self.create_publisher(
+            LineDetection, "/line/detection", 10
+        )
+        self._pub_debug  = self.create_publisher(Image, "/line/debug",  10)
+        self._pub_binary = self.create_publisher(Image, "/line/binary", 10)
 
         self.get_logger().info(
-            f'camera_node démarré  '
-            f'[roi={roi_ratio}, otsu={use_otsu}, min_area={min_area}, debug={self._debug}]'
+            f"camera_node démarré  "
+            f"[roi={roi_ratio}, otsu={use_otsu}, min_area={min_area}, "
+            f"search_timeout={self._search_timeout}s, stop_timeout={self._stop_timeout}s]"
         )
+
 
     def _image_callback(self, msg: Image) -> None:
         self.get_logger().info(
@@ -55,36 +73,76 @@ class CameraNode(Node):
             throttle_duration_sec=2.0,
         )
 
-        frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        res   = self._processor.process_frame(frame)
+        frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
 
-        error_msg      = Float32()
-        error_msg.data = res['error'] if res['error'] is not None else 0.0
+        self._update_fsm(line_detected=False, error=None)   # estimation initiale
 
-        if res['error'] is not None:
-            self.get_logger().info(
-                f"Erreur ligne: {res['error']:+.2f} px",
-                throttle_duration_sec=1.0,
-            )
+        res = self._processor.process_frame(frame, state=self._state)
+
+        self._update_fsm(
+            line_detected = res["line_detected"],
+            error         = res["error"],
+        )
+
+        det                = LineDetection()
+        det.line_detected  = res["line_detected"]
+        det.state          = self._state
+        det.last_direction = self._last_direction
+        det.cx_image       = float(res["cx_image"])
+
+        if res["line_detected"]:
+            det.error   = res["error"]
+            det.cx_line = float(res["cx_line"])
         else:
-            self.get_logger().warn(
-                'Ligne non détectée — erreur forcée à 0.0',
-                throttle_duration_sec=1.0,
-            )
+            det.error   = float("nan")
+            det.cx_line = float("nan")
 
-        self._pub_error.publish(error_msg)
+        self._pub_detection.publish(det)
+
+        self.get_logger().info(
+            f"[{self._state_name()}]  "
+            + (f"erreur={res['error']:+.2f}px" if res["line_detected"] else "ligne absente"),
+            throttle_duration_sec=0.5,
+        )
 
         if self._debug:
-            if res['debug'] is not None:
+            if res["debug"] is not None:
                 self._pub_debug.publish(
-                    self._bridge.cv2_to_imgmsg(res['debug'], encoding='bgr8')
+                    self._bridge.cv2_to_imgmsg(res["debug"], encoding="bgr8")
                 )
             self._pub_binary.publish(
-                self._bridge.cv2_to_imgmsg(res['binary'], encoding='mono8')
+                self._bridge.cv2_to_imgmsg(res["binary"], encoding="mono8")
             )
 
 
-def main(args=None):
+    def _update_fsm(self, *, line_detected: bool, error: float | None) -> None:
+        now = self.get_clock().now().nanoseconds / 1e9
+
+        if line_detected:
+            self._state          = STATE_FOLLOWING
+            self._last_seen_time = now
+            if error is not None:
+                if abs(error) > 5.0:   # seuil mort de 5 px
+                    self._last_direction = float(error)
+        else:
+            elapsed = now - self._last_seen_time
+            if elapsed < self._search_timeout:
+                self._state = STATE_SEARCHING
+            elif elapsed < self._stop_timeout:
+                self._state = STATE_SEARCHING
+            else:
+                self._state = STATE_STOP_LOST
+
+    def _state_name(self) -> str:
+        return {
+            STATE_FOLLOWING: "FOLLOWING",
+            STATE_SEARCHING: "SEARCHING",
+            STATE_STOP_LOST: "STOP_LOST",
+        }.get(self._state, "UNKNOWN")
+
+
+
+def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = CameraNode()
     try:
@@ -96,5 +154,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

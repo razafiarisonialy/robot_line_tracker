@@ -12,13 +12,15 @@ def generate_launch_description():
     arg_output_encoding = DeclareLaunchArgument('output_encoding', default_value='bgr8',        description='Encodage sortie cv_bridge — bgr8 requis par cameraNode')
 
     #camera_node
-    arg_roi_ratio   = DeclareLaunchArgument('roi_ratio',   default_value='0.5',  description='Fraction ROI depuis le bas (0.0–1.0)')
-    arg_use_otsu    = DeclareLaunchArgument('use_otsu',    default_value='True', description='Seuillage adaptatif Otsu')
-    arg_threshold   = DeclareLaunchArgument('threshold',   default_value='80',   description='Seuil fixe si use_otsu=False')
-    arg_min_area    = DeclareLaunchArgument('min_area',    default_value='300',  description='Surface minimale de contour (px²)')
-    arg_blur_size   = DeclareLaunchArgument('blur_size',   default_value='7',    description='Taille filtre gaussien (impair)')
-    arg_morph_size  = DeclareLaunchArgument('morph_size',  default_value='5',    description='Taille noyau morphologique')
-    arg_debug       = DeclareLaunchArgument('debug',       default_value='True', description='Publier images de debug')
+    arg_roi_ratio      = DeclareLaunchArgument('roi_ratio',      default_value='0.5',  description='Fraction ROI depuis le bas (0.0–1.0)')
+    arg_use_otsu       = DeclareLaunchArgument('use_otsu',       default_value='True', description='Seuillage adaptatif Otsu')
+    arg_threshold      = DeclareLaunchArgument('threshold',      default_value='80',   description='Seuil fixe si use_otsu=False')
+    arg_min_area       = DeclareLaunchArgument('min_area',       default_value='300',  description='Surface minimale de contour (px²)')
+    arg_blur_size      = DeclareLaunchArgument('blur_size',      default_value='7',    description='Taille filtre gaussien (impair)')
+    arg_morph_size     = DeclareLaunchArgument('morph_size',     default_value='5',    description='Taille noyau morphologique')
+    arg_debug          = DeclareLaunchArgument('debug',          default_value='True', description='Publier images de debug')
+    arg_search_timeout = DeclareLaunchArgument("search_timeout", default_value="3.0",  description="Délai (s) avant passage de FOLLOWING à SEARCHING")
+    arg_stop_timeout   = DeclareLaunchArgument("stop_timeout",   default_value="6.0",description="Délai (s) avant passage de SEARCHING à STOP_LOST")
 
     #controller_node
     arg_kp              = DeclareLaunchArgument('kp',              default_value='0.003', description='Gain proportionnel Kp')
@@ -26,6 +28,7 @@ def generate_launch_description():
     arg_max_angular     = DeclareLaunchArgument('max_angular',     default_value='0.8',   description='Saturation angulaire (rad/s)')
     arg_speed_reduction = DeclareLaunchArgument('speed_reduction', default_value='0.3',   description='Coefficient réduction vitesse en virage')
     arg_min_speed       = DeclareLaunchArgument('min_speed',       default_value='0.05',  description='Vitesse linéaire minimale (m/s)')
+    arg_search_angular  = DeclareLaunchArgument("search_angular",  default_value="0.4",   description="Vitesse de rotation (rad/s) pendant l'état SEARCHING")
 
     # motor_node
     arg_motor_base_speed = DeclareLaunchArgument('motor_base_speed', default_value='200',  description='Vitesse de base moteurs GoPiGo3 (DPS) → motor_node.base_speed')
@@ -53,13 +56,15 @@ def generate_launch_description():
         name       = 'camera_node',
         output     = 'screen',
         parameters = [{
-            'roi_ratio':  LaunchConfiguration('roi_ratio'),
-            'use_otsu':   LaunchConfiguration('use_otsu'),
-            'threshold':  LaunchConfiguration('threshold'),
-            'min_area':   LaunchConfiguration('min_area'),
-            'blur_size':  LaunchConfiguration('blur_size'),
-            'morph_size': LaunchConfiguration('morph_size'),
-            'debug':      LaunchConfiguration('debug'),
+            'roi_ratio':       LaunchConfiguration('roi_ratio'),
+            'use_otsu':        LaunchConfiguration('use_otsu'),
+            'threshold':       LaunchConfiguration('threshold'),
+            'min_area':        LaunchConfiguration('min_area'),
+            'blur_size':       LaunchConfiguration('blur_size'),
+            'morph_size':      LaunchConfiguration('morph_size'),
+            'debug':           LaunchConfiguration('debug'),
+            "search_timeout":  LaunchConfiguration("search_timeout"),
+            "stop_timeout":    LaunchConfiguration("stop_timeout"),
         }],
     )
 
@@ -75,6 +80,7 @@ def generate_launch_description():
             'max_angular':     LaunchConfiguration('max_angular'),
             'speed_reduction': LaunchConfiguration('speed_reduction'),
             'min_speed':       LaunchConfiguration('min_speed'),
+            "search_angular":  LaunchConfiguration("search_angular"),
         }],
     )
 
@@ -96,6 +102,7 @@ def generate_launch_description():
         arg_camera_device,
         arg_pixel_format,
         arg_output_encoding,
+        
         # camera
         arg_roi_ratio,
         arg_use_otsu,
@@ -104,16 +111,22 @@ def generate_launch_description():
         arg_blur_size,
         arg_morph_size,
         arg_debug,
+        arg_search_timeout, 
+        arg_stop_timeout,
+        
         # controller
         arg_kp,
         arg_base_speed,
         arg_max_angular,
         arg_speed_reduction,
         arg_min_speed,
+        arg_search_angular,
+        
         # motor
         arg_motor_base_speed,
         arg_motor_max_speed,
         arg_steer_gain,
+        
         # nœuds
         v4l2_camera_node,
         camera_node,
