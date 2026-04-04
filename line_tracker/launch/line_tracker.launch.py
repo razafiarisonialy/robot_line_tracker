@@ -76,17 +76,17 @@ def generate_launch_description():
 
     arg_kp = DeclareLaunchArgument(
         'kp',
-        default_value='0.008',
+        default_value='0.0071',
         description='[0.003–0.020] Gain proportionnel (erreur px → rad/s)'
     )
     arg_base_speed = DeclareLaunchArgument(
         'base_speed',
-        default_value='0.08',
+        default_value='0.07',
         description='[0.03–0.15] Vitesse linéaire de base (m/s)'
     )
     arg_max_angular = DeclareLaunchArgument(
         'max_angular',
-        default_value='1.0',
+        default_value='3.0',
         description='[0.5–2.0] Saturation angulaire maximale (rad/s)'
     )
     arg_min_speed = DeclareLaunchArgument(
@@ -137,7 +137,7 @@ def generate_launch_description():
     )
     arg_steer_gain = DeclareLaunchArgument(
         'steer_gain',
-        default_value='50.0',
+        default_value='68.22',
         description='[0–150] Gain empirique de braquage (DPS/rad/s). 0=cinématique pure'
     )
     arg_motor_watchdog_period = DeclareLaunchArgument(
