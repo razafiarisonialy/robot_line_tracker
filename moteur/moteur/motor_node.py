@@ -10,7 +10,7 @@ class MotorNode(Node):
         super().__init__("motor_node")
 
         self.declare_parameter("max_speed",        400)
-        self.declare_parameter("steer_gain",       50.0)
+        self.declare_parameter("steer_gain",       68.22)
         self.declare_parameter("watchdog_period",  0.5)
         self.declare_parameter("watchdog_timeout", 1.0)
 

@@ -91,7 +91,7 @@ def generate_launch_description():
     )
     arg_min_speed = DeclareLaunchArgument(
         'min_speed',
-        default_value='0.03',
+        default_value='0.0',
         description='[0.02–0.06] Vitesse linéaire minimale garantie (m/s)'
     )
     arg_speed_reduction = DeclareLaunchArgument(

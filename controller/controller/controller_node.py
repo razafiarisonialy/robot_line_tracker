@@ -15,11 +15,11 @@ class ControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("controller_node")
 
-        self.declare_parameter("kp",               0.008)
-        self.declare_parameter("base_speed",       0.08)
-        self.declare_parameter("max_angular",      1.0)
+        self.declare_parameter("kp",               0.0071)
+        self.declare_parameter("base_speed",       0.07)
+        self.declare_parameter("max_angular",      3.0)
         self.declare_parameter("speed_reduction",  0.6)
-        self.declare_parameter("min_speed",        0.03)
+        self.declare_parameter("min_speed",        0.0)
         self.declare_parameter("watchdog_period",  0.5)
         self.declare_parameter("watchdog_timeout", 1.0)
         self.declare_parameter("search_angular",   0.55)
