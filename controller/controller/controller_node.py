@@ -23,6 +23,8 @@ class ControllerNode(Node):
         self.declare_parameter("watchdog_period",  0.5)
         self.declare_parameter("watchdog_timeout", 1.0)
         self.declare_parameter("search_angular",   0.55)
+        self.declare_parameter("sharp_turn_threshold", 80.0)
+        self.declare_parameter("sharp_turn_boost",     2.5)
 
         self._kp              = self.get_parameter("kp").value
         self._base_speed      = self.get_parameter("base_speed").value
@@ -32,6 +34,8 @@ class ControllerNode(Node):
         self._watchdog_timeout = self.get_parameter("watchdog_timeout").value
         self._search_angular  = self.get_parameter("search_angular").value
         watchdog_period       = self.get_parameter("watchdog_period").value
+        self._sharp_turn_threshold = self.get_parameter("sharp_turn_threshold").value
+        self._sharp_turn_boost     = self.get_parameter("sharp_turn_boost").value
 
         self._sub = self.create_subscription(
             LineDetection, "/line/detection", self._detection_callback, 10
@@ -60,19 +64,30 @@ class ControllerNode(Node):
             self._handle_stop()
             
     def _handle_following(self, error: float) -> None:
-        angular_z = float(
-            np.clip(self._kp * error, -self._max_angular, self._max_angular)
-        )
+        abs_error = abs(error)
 
-        error_norm = abs(angular_z) / self._max_angular
-        linear_x = float(
-            np.clip(
-                self._base_speed * (1.0 - self._speed_reduction * error_norm),
-                self._min_speed,
-                self._base_speed,
-            )
+        if abs_error > self._sharp_turn_threshold:
+            effective_kp = self._kp * self._sharp_turn_boost
+        else:
+            effective_kp = self._kp
+
+        angular_z = float(
+            np.clip(effective_kp * error, -self._max_angular, self._max_angular)
         )
         
+        error_norm = abs(angular_z) / self._max_angular
+
+        if abs_error > self._sharp_turn_threshold:
+            linear_x = self._min_speed
+        else:
+            linear_x = float(
+                np.clip(
+                    self._base_speed * (1.0 - self._speed_reduction * error_norm),
+                    self._min_speed,
+                    self._base_speed,
+                )
+            )
+
         self._publish_cmd_vel(linear_x, angular_z)
     
     def _handle_searching(self, last_direction: float) -> None:
