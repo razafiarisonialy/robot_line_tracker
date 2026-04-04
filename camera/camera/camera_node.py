@@ -26,37 +26,25 @@ class CameraNode(Node):
         self.declare_parameter("debug",            True)
         self.declare_parameter("search_timeout",   1.5)
         self.declare_parameter("stop_timeout",     4.0)
-        self.declare_parameter('min_contrast',     15.0)
-        self.declare_parameter('max_white_ratio',  0.80)
-        self.declare_parameter('use_multi_roi',    True)
-        self.declare_parameter('roi_levels',       3)
 
-        roi_ratio        = self.get_parameter("roi_ratio").value
-        use_otsu         = self.get_parameter("use_otsu").value
-        threshold        = self.get_parameter("threshold").value
-        min_area         = self.get_parameter("min_area").value
-        blur_size        = self.get_parameter("blur_size").value
-        morph_size       = self.get_parameter("morph_size").value
-        self._debug      = self.get_parameter("debug").value
+        roi_ratio   = self.get_parameter("roi_ratio").value
+        use_otsu    = self.get_parameter("use_otsu").value
+        threshold   = self.get_parameter("threshold").value
+        min_area    = self.get_parameter("min_area").value
+        blur_size   = self.get_parameter("blur_size").value
+        morph_size  = self.get_parameter("morph_size").value
+        self._debug = self.get_parameter("debug").value
         self._search_timeout = self.get_parameter("search_timeout").value
         self._stop_timeout   = self.get_parameter("stop_timeout").value
-        min_contrast    = self.get_parameter('min_contrast').value
-        max_white_ratio = self.get_parameter('max_white_ratio').value
-        use_multi_roi   = self.get_parameter('use_multi_roi').value
-        roi_levels      = self.get_parameter('roi_levels').value
 
         self._bridge    = CvBridge()
         self._processor = ImageProcessing(
-            threshold       = threshold,
-            roi_ratio       = roi_ratio,
-            use_otsu        = use_otsu,
-            min_area        = min_area,
-            blur_size       = blur_size,
-            morph_size      = morph_size,
-            min_contrast    = min_contrast,
-            max_white_ratio = max_white_ratio,
-            use_multi_roi   = use_multi_roi,
-            roi_levels      = roi_levels,
+            threshold  = threshold,
+            roi_ratio  = roi_ratio,
+            use_otsu   = use_otsu,
+            min_area   = min_area,
+            blur_size  = blur_size,
+            morph_size = morph_size,
         )
 
         self._state:          int   = STATE_FOLLOWING
@@ -75,19 +63,13 @@ class CameraNode(Node):
         self.get_logger().info(
             f"camera_node démarré  "
             f"[roi={roi_ratio}, otsu={use_otsu}, min_area={min_area}, "
-            f"search_timeout={self._search_timeout}s, stop_timeout={self._stop_timeout}s, "
-            f"multi_roi={use_multi_roi}]"
+            f"search_timeout={self._search_timeout}s, stop_timeout={self._stop_timeout}s]"
         )
 
 
     def _image_callback(self, msg: Image) -> None:
-        self.get_logger().info(
-            f"Image reçue: {msg.width}x{msg.height}",
-            throttle_duration_sec=2.0,
-        )
-
         frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        res = self._processor.process_frame(frame, state=self._state)
+        res = self._processor.process_frame(frame)
         self._update_fsm(
             line_detected = res["line_detected"],
             error         = res["error"],
@@ -97,22 +79,13 @@ class CameraNode(Node):
         det.line_detected  = res["line_detected"]
         det.state          = self._state
         det.last_direction = self._last_direction
-        det.cx_image       = float(res["cx_image"])
 
         if res["line_detected"]:
-            det.error   = res["error"]
-            det.cx_line = float(res["cx_line"])
+            det.error = res["error"]
         else:
-            det.error   = float("nan")
-            det.cx_line = float("nan")
+            det.error = float("nan")
 
         self._pub_detection.publish(det)
-
-        self.get_logger().info(
-            f"[{self._state_name()}]  "
-            + (f"erreur={res['error']:+.2f}px" if res["line_detected"] else "ligne absente"),
-            throttle_duration_sec=0.5,
-        )
 
         if self._debug:
             if res["debug"] is not None:
@@ -130,9 +103,8 @@ class CameraNode(Node):
         if line_detected:
             self._state          = STATE_FOLLOWING
             self._last_seen_time = now
-            if error is not None:
-                if abs(error) > 5.0:
-                    self._last_direction = float(error)
+            if error is not None and abs(error) > 5.0:
+                self._last_direction = float(error)
         else:
             elapsed = now - self._last_seen_time
             if elapsed < self._search_timeout:
@@ -141,13 +113,6 @@ class CameraNode(Node):
                 self._state = STATE_SEARCHING
             else:
                 self._state = STATE_STOP_LOST
-
-    def _state_name(self) -> str:
-        return {
-            STATE_FOLLOWING: "FOLLOWING",
-            STATE_SEARCHING: "SEARCHING",
-            STATE_STOP_LOST: "STOP_LOST",
-        }.get(self._state, "UNKNOWN")
 
 
 

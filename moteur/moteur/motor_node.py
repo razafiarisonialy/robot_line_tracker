@@ -4,17 +4,16 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from .GoPiGo3Driver import GoPiGo3Driver
+
 class MotorNode(Node):
     def __init__(self) -> None:
         super().__init__("motor_node")
 
-        self.declare_parameter("base_speed",       200)
         self.declare_parameter("max_speed",        400)
-        self.declare_parameter("steer_gain",       50.0)
+        self.declare_parameter("steer_gain",       68.22)
         self.declare_parameter("watchdog_period",  0.5)
         self.declare_parameter("watchdog_timeout", 1.0)
 
-        base_speed             = self.get_parameter("base_speed").value
         max_speed              = self.get_parameter("max_speed").value
         steer_gain_raw         = self.get_parameter("steer_gain").value
         watchdog_period        = self.get_parameter("watchdog_period").value
@@ -23,7 +22,6 @@ class MotorNode(Node):
         steer_gain = steer_gain_raw if steer_gain_raw != 0.0 else None
 
         self._driver = GoPiGo3Driver(
-            base_speed = base_speed,
             max_speed  = max_speed,
             steer_gain = steer_gain,
         )
@@ -37,7 +35,7 @@ class MotorNode(Node):
 
         self.get_logger().info(
             f"motor_node démarré  "
-            f"[base={base_speed} DPS, max={max_speed} DPS, steer_gain={steer_gain}]"
+            f"[max={max_speed} DPS, steer_gain={steer_gain}]"
         )
 
 
@@ -56,12 +54,6 @@ class MotorNode(Node):
             return
 
         self._driver.apply_twist(linear_x, angular_z)
-
-        direction = "← Gauche" if angular_z > 0 else "→ Droite" if angular_z < 0 else "■ Centre"
-        self.get_logger().info(
-            f"v={linear_x:.3f} m/s  ω={angular_z:+.3f} rad/s  {direction}",
-            throttle_duration_sec=0.1,
-        )
 
     def _watchdog_callback(self) -> None:
         dt = (self.get_clock().now() - self._last_msg_time).nanoseconds / 1e9
