@@ -115,18 +115,6 @@ def generate_launch_description():
         description='[0.5–3.0] Timeout watchdog controller (s)'
     )
 
-    arg_sharp_turn_threshold = DeclareLaunchArgument(
-        'sharp_turn_threshold',
-        default_value='80.0',
-        description='[40–150] Seuil erreur (px) pour détecter un virage serré'
-    )
-    arg_sharp_turn_boost = DeclareLaunchArgument(
-        'sharp_turn_boost',
-        default_value='2.5',
-        description='[1.5–4.0] Multiplicateur du Kp en virage serré'
-    )
-
-
 
     # motor_node — Actionnement GoPiGo3
 
@@ -197,8 +185,6 @@ def generate_launch_description():
             'search_angular':   LaunchConfiguration('search_angular'),
             'watchdog_period':  LaunchConfiguration('ctrl_watchdog_period'),
             'watchdog_timeout': LaunchConfiguration('ctrl_watchdog_timeout'),
-            'sharp_turn_threshold': LaunchConfiguration('sharp_turn_threshold'),
-            'sharp_turn_boost':     LaunchConfiguration('sharp_turn_boost'),
         }],
     )
 
@@ -227,8 +213,7 @@ def generate_launch_description():
         # Contrôleur
         arg_kp, arg_base_speed, arg_max_angular, arg_min_speed,
         arg_speed_reduction, arg_search_angular,
-        arg_ctrl_watchdog_period, arg_ctrl_watchdog_timeout, 
-        arg_sharp_turn_threshold, arg_sharp_turn_boost,
+        arg_ctrl_watchdog_period, arg_ctrl_watchdog_timeout,
         
         # Moteur
         arg_motor_max_speed, arg_steer_gain,
